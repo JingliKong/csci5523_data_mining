@@ -2,6 +2,8 @@ import pyspark
 import argparse 
 import json 
 
+# columns: review_id, user_id, business_id, stars, text, date
+
 # run: 
 # python task1.py -- input_file <input_file> --output_file <output_file> --stopwords <stopwords> --y <y> --m <m> --n <n>
 if __name__ == '__main__':
