@@ -58,18 +58,9 @@ if __name__ == '__main__':
     # Starting 4.1.1 B
 
     # first map review ids and dates into list of key value pairs. e.g, (ids, dates)  
-    ids_and_dates : list = rdd.map(lambda x: (x['review_id'], x['date'])).collect() # recall when we collect we return an actual value not just rdd 
+    num_reviews_in_year = rdd.map(lambda x: x['date'].split('-')[0]).filter(lambda x: x == args.y).count()  
     
-    
-
-    #filtering by year returns list of (ids, dates) which correspond to the given year  
-    filter_by_year = sc.parallelize(ids_and_dates) # just turns the ids_and_dates list back into an rdd 
-    print(f'years: {args.y}') #TODO remove this after debugging 
-    filter_by_year : list = filter_by_year.filter(lambda x: x[1][0:4] == args.y).collect() #FIXME: when putting a constant like 2017 this works as expected but using args.y doesn't find anything 
-
-    # then all we have left to do is make sure we only return unique reviews by checking their ids 
-    filter_by_year : int = sc.parallelize(sc.parallelize(filter_by_year).distinct().collect()).count()
-    solutions['B'] = filter_by_year 
+    solutions['B'] = num_reviews_in_year 
      
     # 4.1.1 C 
 
@@ -89,6 +80,8 @@ if __name__ == '__main__':
     print(f'C: ', solutions['C'])
 
     # 4.1.1 D Top m users who have the largest number of reviews and its count
+    print(f'D: ', solutions['D'])
 
     # 4.1.1 E Top n frequent words in the review text. 
 
+    print(f'D: ', solutions['E'])
