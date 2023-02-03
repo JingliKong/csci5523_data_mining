@@ -86,7 +86,7 @@ if __name__ == '__main__':
     counts = text.flatMap(lambda x: x.strip().split(" "))
     counts = counts.map(lambda x: x.lower())
     top_n = counts.filter(lambda x: x not in stopwords) \
-    .map(lambda word: (word, 1)).reduceByKey(lambda a, b: a+b).sortBy(lambda x: x[1], False).take(5)
+    .map(lambda word: (word, 1)).reduceByKey(lambda a, b: a+b).sortBy(lambda x: x[1], False).map(lambda x: x[0]).take(args.n)
     solutions['E'] = top_n 
 
 
