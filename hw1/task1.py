@@ -22,8 +22,8 @@ if __name__ == '__main__':
     parser.add_argument('--output_file', type=str, default='./data/alt1.json', help='output file containing answers')
     parser.add_argument('--stopwords', type=str, default='./data/stopwords', help='stopwords')
     parser.add_argument('--y', type=int, default=2014, help='year')
-    parser.add_argument('--m', type=int, default=18, help='top m users')
-    parser.add_argument('--n', type=int, default=18, help='top n frequency words')
+    parser.add_argument('--m', type=int, default=5, help='top m users')
+    parser.add_argument('--n', type=int, default=5, help='top n frequency words')
     args = parser.parse_args()
 
     print(f'input file: {args.input_file}')
@@ -70,6 +70,26 @@ if __name__ == '__main__':
     unique_users = sc.parallelize(users.distinct().collect()).count()
     solutions['C'] = unique_users 
 
+    # 4.1.1 D Top m users who have the largest number of reviews and its count
+    top_m_users = rdd.map(lambda x: (x['user_id'])).map(lambda user: (user, 1)).reduceByKey(lambda a, b: a+b).sortBy(lambda x: x[1], False).take(args.m)
+    solutions['D'] = top_m_users 
+
+    # 4.1.1 E 
+    punctuations = ["(", "[", ",", ".", "!", "?", ":", ";", "]", ")"] #TODO: Find a way to use this later? 
+
+    stopwords = []
+    with open('./data/stopwords') as f: 
+        stopwords.append(f.read().split('\n'))
+    stopwords = stopwords[0]
+    # replace all the punctuations 
+    text = rdd.map(lambda x: x['text'].replace('!', '').replace('(', '').replace("[","").replace(',','').replace('.', '').replace('?', '').replace(':','').replace(';',''))
+    counts = text.flatMap(lambda x: x.strip().split(" "))
+    counts = counts.map(lambda x: x.lower())
+    top_n = counts.filter(lambda x: x not in stopwords) \
+    .map(lambda word: (word, 1)).reduceByKey(lambda a, b: a+b).sortBy(lambda x: x[1], False).take(5)
+    solutions['E'] = top_n 
+
+
     # 4.1.1 A Total number of reviews   
     print(f'A: ', solutions['A'])   
 
@@ -84,4 +104,4 @@ if __name__ == '__main__':
 
     # 4.1.1 E Top n frequent words in the review text. 
 
-    print(f'D: ', solutions['E'])
+    print(f'E: ', solutions['E'])
