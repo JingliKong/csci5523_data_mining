@@ -36,8 +36,6 @@ if __name__ == '__main__':
     
     solutions = {'A': None, 'B': None, 'C': None, 'D': None, 'E': None} 
 
-    # solution fill in through computation 
-    total_num_review : int = 0 
 
     # read in file and create rdd 
     lines = sc.textFile(args.input_file)
@@ -58,7 +56,7 @@ if __name__ == '__main__':
     # Starting 4.1.1 B
 
     # first map review ids and dates into list of key value pairs. e.g, (ids, dates)  
-    num_reviews_in_year = rdd.map(lambda x: x['date'].split('-')[0]).filter(lambda x: x == args.y).count()  
+    num_reviews_in_year = rdd.map(lambda x: x['date'].split('-')[0]).filter(lambda x: x == str(args.y)).count() #FIXME: when passing args.y we are still not able to find date. Works fine if we pass in a constant 
     
     solutions['B'] = num_reviews_in_year 
      
@@ -105,3 +103,5 @@ if __name__ == '__main__':
     # 4.1.1 E Top n frequent words in the review text. 
 
     print(f'E: ', solutions['E'])
+
+    sc.stop() # shuts down pyspark context 
