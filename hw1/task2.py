@@ -1,3 +1,4 @@
+
 import argparse
 import json
 import pyspark
@@ -42,13 +43,13 @@ if __name__ == '__main__':
     joined = reviews_rdd.join(business_rdd)
 
     # now getting rid of the business_id field to just have (stars, [categories])
-    stars_categories = joined.map(lambda x: (x[1][0], x[1][1]))
+    stars_categories = joined.map(lambda x: (x[1][0], x[1][1])).flatMap(lambda x: [(x[0], y) for y in x[1]]).map(lambda x: (x[1], x[0]))
 
     # giving each category the star associated with them to get (stars, category) for each category
     # FIXME: This isn't working correctly for some reason
-    stars_categories.flatMap(lambda x: [(x[0], y) for y in x[1]])
+
     # just flipping to the tuple to get the category as key (category, stars)
-    stars_categories = stars_categories.map(lambda x: (x[1], x[0]))
+    # stars_categories = stars_categories.map(lambda x: (x[1], x[0]))
 
     # finding the average stars per category
     total_stars = stars_categories.reduceByKey(lambda x, y: x+y)
@@ -58,8 +59,8 @@ if __name__ == '__main__':
         x[0], 1)).reduceByKey(lambda x, y: x+y)
 
     total_avg = total_stars.join(counts).map(
-        lambda x: (x[0], round(x[1][0]/x[1][1])))
-    # total_avg = total_avg.sortByKey(lambda x: x[1], False)
+        lambda x: (x[0], x[1][0]/x[1][1]))
+    total_avg = total_avg.sortBy(lambda x: (-x[1], x[0]))
 
     result = {}
     result["result"] = total_avg.take(args.n)
