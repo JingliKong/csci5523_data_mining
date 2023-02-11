@@ -1,4 +1,3 @@
-
 import argparse
 import json
 import pyspark
@@ -14,17 +13,29 @@ if __name__ == '__main__':
     sc = pyspark.SparkContext.getOrCreate()
     sc.setLogLevel("OFF")
 
-    # reading in parameters
+    # # reading in parameters
     parser = argparse.ArgumentParser(description='ALT1')
     parser.add_argument('--review_file', type=str,
-                        default='./data/review.json', help='the input file')
+                        default='./backup/data/hw1/review.json', help='the input file')
     parser.add_argument('--business_file', type=str,
-                        default='./data/business.json', help='output file containing answers')
+                        default='./backup/data/hw1/business.json', help='output file containing answers')
     parser.add_argument('--output_file', type=str,
-                        default='./data/task2_sol.json', help='outputfile')
-    parser.add_argument('--n', type=int, default=3, help='top n categories')
+                        default='./backup/data/hw1/a1t2.json', help='outputfile')
+    parser.add_argument('--n', type=int, default=5, help='top n categories')
 
     args = parser.parse_args()
+
+    # # reading in parameters
+    # parser = argparse.ArgumentParser(description='ALT1')
+    # parser.add_argument('--review_file', type=str,
+    #                     default='./data/review.json', help='the input file')
+    # parser.add_argument('--business_file', type=str,
+    #                     default='./data/business.json', help='output file containing answers')
+    # parser.add_argument('--output_file', type=str,
+    #                     default='./data/task2_sol.json', help='outputfile')
+    # parser.add_argument('--n', type=int, default=100, help='top n categories')
+
+    # args = parser.parse_args()      
 
     # read in business and review files
     business_text = sc.textFile(
@@ -34,10 +45,15 @@ if __name__ == '__main__':
     # getting the (business_ids, stars)
     reviews_rdd = reviews_text.map(lambda x: (x['business_id'], x['stars']))
 
+    def removeWhiteSpace(ls):
+        for i in range(len(ls)):
+            ls[i] = ls[i].strip()
+        return ls 
+
     # we are filtering the categories otherwise sometimes we get null from a map on the categories
     # Extracting (business_id, [categories]) after removing whitespace and splitting on commas
-    business_rdd = business_text.filter(lambda x: x['categories']).map(lambda x: (x['business_id'], x['categories'].replace(' ', ''))) \
-        .map(lambda x: (x[0], x[1].split(',')))
+    business_rdd = business_text.filter(lambda x: x['categories']).map(lambda x: (x['business_id'], x['categories'])) \
+        .map(lambda x: (x[0], x[1].split(','))).map(lambda x: (x[0], removeWhiteSpace(x[1])))
 
     # join on business_id to get business_id, (stars, [categories])
     joined = reviews_rdd.join(business_rdd)
@@ -66,3 +82,8 @@ if __name__ == '__main__':
     result["result"] = total_avg.take(args.n)
     print(result["result"])
     sc.stop()  # shuts down pyspark context
+
+    # writing to outputfile 
+    f = open(args.output_file, 'w', encoding='utf-8')
+    json.dump(result, f)
+    f.close()

@@ -18,9 +18,9 @@ if __name__ == '__main__':
 
     # reading in parameters 
     parser = argparse.ArgumentParser(description='ALT1')
-    parser.add_argument('--input_file', type=str, default='./data/review.json', help='the input file')
-    parser.add_argument('--output_file', type=str, default='./data/alt1.json', help='output file containing answers')
-    parser.add_argument('--stopwords', type=str, default='./data/stopwords', help='stopwords')
+    parser.add_argument('--input_file', type=str, default='./backup/data/hw1/review.json', help='the input file')
+    parser.add_argument('--output_file', type=str, default='./backup/data/hw1/a1t1.json', help='output file containing answers')
+    parser.add_argument('--stopwords', type=str, default='./backup/data/hw1/stopwords', help='stopwords')
     parser.add_argument('--y', type=int, default=2014, help='year')
     parser.add_argument('--m', type=int, default=5, help='top m users')
     parser.add_argument('--n', type=int, default=5, help='top n frequency words')
@@ -56,7 +56,7 @@ if __name__ == '__main__':
     # Starting 4.1.1 B
 
     # first map review ids and dates into list of key value pairs. e.g, (ids, dates)  
-    num_reviews_in_year = rdd.map(lambda x: x['date'].split('-')[0]).filter(lambda x: x == str(args.y)).count() #FIXME: when passing args.y we are still not able to find date. Works fine if we pass in a constant 
+    num_reviews_in_year = rdd.map(lambda x: x['date'].split('-')[0]).filter(lambda x: x == str(args.y)).count() 
     
     solutions['B'] = num_reviews_in_year 
      
@@ -76,7 +76,7 @@ if __name__ == '__main__':
     punctuations = ["(", "[", ",", ".", "!", "?", ":", ";", "]", ")"] #TODO: Find a way to use this later? 
 
     stopwords = []
-    with open('./data/stopwords') as f: 
+    with open(args.stopwords) as f: 
         stopwords.append(f.read().split('\n'))
     stopwords = stopwords[0]
     # replace all the punctuations 
@@ -105,3 +105,8 @@ if __name__ == '__main__':
     print(f'E: ', solutions['E'])
 
     sc.stop() # shuts down pyspark context 
+
+    # writing to outputfile 
+    f = open(args.output_file, 'w', encoding='utf-8')
+    json.dump(solutions, f)
+    f.close()
