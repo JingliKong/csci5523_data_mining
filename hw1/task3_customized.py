@@ -9,7 +9,7 @@ if __name__ == "__main__":
     def partitioner(x):
     return hash(x)
     '''
-    
+    start_time = time.process_time()
 
     sc_conf = pyspark.SparkConf()
     sc_conf.setAppName('task1')
@@ -21,32 +21,18 @@ if __name__ == "__main__":
     sc.setLogLevel("OFF")
 
     # reading in parameters
-    # parser = argparse.ArgumentParser(description='ALT1')
-    # parser.add_argument('--input_file', type=str,
-    #                     default='./backup/data/hw1/review.json', help='the input file')
-    # parser.add_argument('--output_file', type=str,
-    #                     default='./backup/data/hw1/a1t3_customized.json', help='output file containing answers')
-    # parser.add_argument('--n_partitions', type=int,
-    #                     default=7, help='how many partitions we split the rdd into')
-    # parser.add_argument('--n', type=int, default=100,
-    #                     help='more than n reviews')
-
-    # args = parser.parse_args()
-
     parser = argparse.ArgumentParser(description='ALT1')
     parser.add_argument('--input_file', type=str,
-                        default='./data/review.json', help='the input file')
+                        default='./backup/data/hw1/review.json', help='the input file')
     parser.add_argument('--output_file', type=str,
-                        default='./data/a1t3_customized.json', help='output file containing answers')
+                        default='./backup/data/hw1/a1t3_customized.json', help='output file containing answers')
     parser.add_argument('--n_partitions', type=int,
-                        default=1, help='how many partitions we split the rdd into')
+                        default=7, help='how many partitions we split the rdd into')
     parser.add_argument('--n', type=int, default=100,
                         help='more than n reviews')
 
     args = parser.parse_args()
 
-    
-    start_time = time.process_time()
     business_review = sc.textFile(args.input_file).map(lambda line: json.loads(line)).map(
         lambda x: (x['business_id'], 1)).reduceByKey(lambda x, y: x+y).filter(lambda x: x[1] > args.n).partitionBy(args.n_partitions, hash)
 

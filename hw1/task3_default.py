@@ -6,8 +6,8 @@ import time
 
 #  python task3_default.py --input_file ./data/review.json --output_file data/a1t3_default.json
 if __name__ == '__main__':
-    
-    
+
+    start_time = time.process_time()
     
     sc_conf = pyspark.SparkConf()
     sc_conf.setAppName('task1')
@@ -17,28 +17,26 @@ if __name__ == '__main__':
     sc = pyspark.SparkContext(conf=sc_conf)
     sc.setLogLevel("OFF")
 
-    
-
     # reading in parameters
-    # parser = argparse.ArgumentParser(description='ALT1')
-    # parser.add_argument('--input_file', type=str,
-    #                     default='./backup/data/hw1/review.json', help='the input file')
-    # parser.add_argument('--output_file', type=str,
-    #                     default='./backup/data/hw1/a1t3_default.json', help='output file containing answers')
-    # parser.add_argument('--n', type=int, default=5,
-    #                     help='more than n reviews')
-
-    # args = parser.parse_args()
-
     parser = argparse.ArgumentParser(description='ALT1')
     parser.add_argument('--input_file', type=str,
-                        default='./data/review.json', help='the input file')
+                        default='./backup/data/hw1/review.json', help='the input file')
     parser.add_argument('--output_file', type=str,
-                        default='./data/a1t3_customized.json', help='output file containing answers')
-    parser.add_argument('--n', type=int, default=100,
+                        default='./backup/data/hw1/a1t3_default.json', help='output file containing answers')
+    parser.add_argument('--n', type=int, default=5,
                         help='more than n reviews')
 
     args = parser.parse_args()
+
+    # parser = argparse.ArgumentParser(description='ALT1')
+    # parser.add_argument('--input_file', type=str,
+    #                     default='./data/review.json', help='the input file')
+    # parser.add_argument('--output_file', type=str,
+    #                     default='./data/a1t3_customized.json', help='output file containing answers')
+    # parser.add_argument('--n', type=int, default=100,
+    #                     help='more than n reviews')
+
+    # args = parser.parse_args()
 
     import operator
     # business_review = sc.textFile(args.input_file).map(lambda line: json.loads(line)).map(
@@ -47,7 +45,7 @@ if __name__ == '__main__':
 
     # business_review = sc.textFile(args.input_file).map(lambda line: json.loads(line)).map(
     #     lambda x: (x['business_id'], 1)).mapPartitions(lambda x: [sum(1 for _ in x)])
-    
+
     business_text = sc.textFile(args.input_file).map(lambda line: json.loads(line)).map(
         lambda x: (x['business_id'], 1))
     
@@ -59,7 +57,7 @@ if __name__ == '__main__':
     so you can get the length of each array to get the number of items per partition.
     '''  # from google
 
-    start_time = time.process_time()
+
     result = business_text.reduceByKey(operator.add).filter(lambda x: x[1] > args.n)
     
 
