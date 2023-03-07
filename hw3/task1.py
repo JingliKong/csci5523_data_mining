@@ -70,7 +70,7 @@ def main(input_file, output_file, jac_thr, n_bands, n_rows, sc):
         n_rows: int = int(sig_length / n_bands )
         
         # allocating space for the new subvectors 
-        bands = [np.zeros((n_bands, n_rows))]
+        bands = np.zeros((n_bands, n_rows))
 
         bands_index = 0 
         for i in range (0, sig_length, n_rows): 
