@@ -10,26 +10,43 @@ B = [76,181,356,716,403,338,293,393,518,164,985,229,899,371,271,499,400,403,241,
 M = 100 
 
 
-
-ROWS: int = 1  
-
 def MinHash(rdd: pyspark.rdd.PipelinedRDD, signature_len: int) -> pyspark.rdd.PipelinedRDD: 
     '''rdd: (business_id, [0, 1, 0, ...])'''
     # recall signature_len = BANDS * ROWS  
     observations: list[int] = list(rdd[1]) 
-    signatures = np.zeros(M, dtype=int)
+    signatures = np.zeros(signature_len, dtype=int)
+
+    # signature will have values between 0 and mod_by_val - 1  
+    mod_by_val = 2  
+
     # we have M signatures 
     for i in range(signature_len): 
         hashes = []
         nonzero_entries = np.nonzero(observations)
         for x in range(len(nonzero_entries)): 
-            val = (A[i]*observations[x] + B[i]) % M
+            val = (A[i]*observations[x] + B[i]) % mod_by_val
             # print(val)
             hashes.append(val)
         signatures[i] = min(hashes)
 
     return (rdd[0], signatures) 
 
+# def MinHash(rdd: pyspark.rdd.PipelinedRDD, signature_len: int) -> pyspark.rdd.PipelinedRDD: 
+#     '''rdd: (business_id, [0, 1, 0, ...])'''
+#     # recall signature_len = BANDS * ROWS  
+#     observations: list[int] = list(rdd[1]) 
+#     signatures = np.zeros(M, dtype=int)
+#     # we have M signatures 
+#     for i in range(signature_len): 
+#         hashes = []
+#         nonzero_entries = np.nonzero(observations)
+#         for x in range(len(nonzero_entries)): 
+#             val = (A[i]*observations[x] + B[i]) % M
+#             # print(val)
+#             hashes.append(val)
+#         signatures[i] = min(hashes)
+
+#     return (rdd[0], signatures) 
 def main(input_file, output_file, jac_thr, n_bands, n_rows, sc):
 
     """ You need to write your own code """
@@ -54,7 +71,7 @@ def main(input_file, output_file, jac_thr, n_bands, n_rows, sc):
         # initialzing an array of 0 the size of the number of users  
         vector_rep = np.zeros(num_users.value)
         for u in users: 
-            index = user_translation.value[u]
+            index = user_translation.value[u] #FIXME: instead of creating large sparse matrix just store the indexes of the users 
             vector_rep[index] = 1  
         # (business_id, [0, 1, 0, ...])
         return (x[0], vector_rep)
@@ -70,39 +87,51 @@ def main(input_file, output_file, jac_thr, n_bands, n_rows, sc):
         n_rows: int = int(sig_length / n_bands )
         
         # allocating space for the new subvectors 
-        bands = np.zeros((n_bands, n_rows))
+        bands = []
 
         bands_index = 0 
         for i in range (0, sig_length, n_rows): 
-            bands[bands_index, :] = signature[i:i+n_rows]  
+            bands.append((bands_index, (rdd[0], signature[i:i+n_rows])))  
             bands_index += 1 
         # (business_id, [bands])
-        return (rdd[0], bands)  
+        return bands 
     
+    # (0, ('eMiN8nm70jjKg8izikVWDA', array([89, 92]))) <-- list of these 
     bands = signatures.map(lambda x: CreateBands(x, args.n_bands))
 
-    # convert each (b_id, <sig>) into  (b_id, partial_sig), (b_id, partial_sig)
-    bins = bands.flatMap(lambda x: [(x[0], y) for y in x[1]])
+    # now grouping by the band so we compare each band with other sigs in the same band 
+    compare_bands = bands.groupByKey() # FIXME: doesn't group by key correctly  
 
     def LSH(arrays: list[tuple[str, np.ndarray]]) -> pyspark.rdd.PipelinedRDD: 
-        '''rdd: (b_id, partial_sig)
-            e.g., ('eMiN8nm70jjKg8izikVWDA', array([89., 92.])
+        # used to generate candidate pairs 
+        import itertools 
+
+        '''rdd: (band, (b_id, partial_sig))
+            (0, ('eMiN8nm70jjKg8izikVWDA', array([89, 92])))
         '''
         k = 100 # number of buckets
         hashes = {i: [] for i in range(100)}
 
         for arr in arrays:
+            business_id:str = arr[1][0]
+            partial_signature: np.ndarray = arr[1][1] 
             # hashing the partial signature to the buckets 
-            hash_value = hash(arr[1].tobytes()) % k
+            hash_value = hash(partial_signature.tobytes()) % k
             # appending the business_id that hashes to a bucket 
-            hashes[hash_value].append(arr[0])
+            hashes[hash_value].append(business_id)
 
+        candidates: list[tuple[str, str]] = [] 
+
+        for bucket in hashes.values(): 
+            if len(bucket) > 1: 
+                temp = itertools.combinations(bucket, 2)
+                candidates.append(temp)
         # the key is the bucket that a business_id is hashed to 
-        return [(k, v) for k, v in hashes.items()] 
+        return candidates  
     
-    buckets = bins.mapPartitions(lambda x: LSH(list(x))) \
-        .groupByKey()
-    print(buckets.take(1))
+    # FIXME: currently doenst work 
+    lsh = compare_bands.map(lambda x: LSH(x[1]))
+    
 
     # TODO: convert each (b_id, <sig>) into  (b_id, partial_sig), (b_id, partial_sig) etc the size pf partial_sig depends on the length of the row 
     # TODO: has each new (b_id, partial_sig) to a bucket based on the partial_sig -> map to (bucket_id, (b_id, partial_sig)) 
