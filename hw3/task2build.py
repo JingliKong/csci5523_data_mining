@@ -11,10 +11,11 @@ def main(train_file, model_file, co_rated_thr, sc):
     """ you need to write your own code """
     rdd = sc.textFile(train_file).map(lambda x: json.loads(x))
 
-    user_rdd = rdd.map(lambda x: x['user_id']).distinct()
-    # broadcasting the lookup table to know which index of the vector corresponds to each user 
-    user_translation = user_rdd.zipWithIndex().map(lambda x: (x[0], x[1])).collectAsMap()
-    user_translation = sc.broadcast(user_translation)
+    # TODO: Uncomment this when we do LSH and Minhash 
+    # user_rdd = rdd.map(lambda x: x['user_id']).distinct()
+    # # broadcasting the lookup table to know which index of the vector corresponds to each user 
+    # user_translation = user_rdd.zipWithIndex().map(lambda x: (x[0], x[1])).collectAsMap()
+    # user_translation = sc.broadcast(user_translation)
 
     # (business_id, user_id)
     pairs = rdd.map(lambda x: (x['user_id'], x['business_id'], x['stars'])) \
@@ -22,14 +23,14 @@ def main(train_file, model_file, co_rated_thr, sc):
     # dict like: (user, b_id): stars 
     # ('g9RJ3rbeIp5ZbMnGPqvOUA', 'dChRGpit9fM_kZK5pafNyA'): 5.0
     # Then we know how many stars each user rated each business. 
-    
+    # This is the lookup table to know what users have rated items as
     user_business_stars = sc.broadcast(pairs.collectAsMap())
 
     # (user, [(b1, b2), (b2, b4)]) 
     user_b_rdd = rdd.map(lambda x: (x['user_id'], x['business_id'])) \
         .groupByKey() \
         .map(lambda x: (x[0], sorted(list(itertools.combinations(sorted(x[1]), 2)))))
-    # (user1, [(b1, b2), (b3, b4)]) (user2, [(b1, b2), (b1, b3)])
+    # (user1,   , b2), (b1, b3)])
     # [(user1, (b1,b2), (user2, (b1, b3))]
     # (b1, b2) [user1, user2]
     business_pair_rdd = user_b_rdd.flatMap(lambda x: [(x[0], business_pair) for business_pair in x[1]]) \
@@ -76,15 +77,40 @@ def main(train_file, model_file, co_rated_thr, sc):
         return (business_pair, result) 
     
     weights = business_pair_rdd.map(lambda x: PearsonCorrelation(x))
+    weights = sc.broadcast(weights.collectAsMap())
 
-    json_rdd = weights.map(lambda x: {"b1": x[0][0], "b2": x[0][1], "sim": x[1]}).collect() 
+    # json_rdd = weights.map(lambda x: {"b1": x[0][0], "b2": x[0][1], "sim": x[1]}).collect() 
     # Save the RDD as a JSON file
     # print(len(json_rdd))
-    f = open(model_file, 'w', encoding='utf-8')
-    for pair in json_rdd: 
-        json.dump(pair, f)
-        f.write('\n')
-    f.close()
+    # f = open(model_file, 'w', encoding='utf-8')
+    # for pair in json_rdd: 
+    #     json.dump(pair, f)
+    #     f.write('\n')
+    # f.close()
+
+    # rdd of values we want to predict the ratings for 
+    predict_rdd = sc.textFile('./data2/val_review.json').map(lambda x: json.loads(x)) \
+        .map(lambda x: (x['user_id'], x['business_id'])) # pairs to predict 
+    user_rated_items = rdd.map(lambda x: (x['user_id'], x['business_id'])) \
+        .groupByKey() \
+        .map(lambda x: (x[0], list(x[1])))
+    
+    # user_id, (b_id to predict, [list of b_id that user_id has rated]) FIXME: Make sure that we create (b1,b2) pairs that exist we need to sort?  
+    # user_id, (b_id to predict, b_id that user has rated) the tuple is sorted to ensure that it exists 
+    # 
+    predict_join_user = predict_rdd.join(user_rated_items) \
+        .flatMap(lambda x: [(x[0], (x[1][0], i)) for i in x[1][1]]) \
+        .map(lambda x: (x[0], tuple(sorted(x[1]))))
+    def makePrediction(x):
+        user_id = x[0] 
+        business_to_predict = x[1][0] 
+        business_rated = x[1][1]
+
+        # rating for user on n gives the rating 
+        r_u_n = user_business_stars.value[(user_id, business_rated)]
+        # weight between rated and the one we want to predict 
+        w_i_n = weights.value[(business_to_predict, business_rated)] # FIXME: this weight may not exist if we have the wrong order 
+        return None 
     print()
 
 
