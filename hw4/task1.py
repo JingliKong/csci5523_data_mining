@@ -1,5 +1,7 @@
 import argparse
-import pyspark 
+import json
+import time
+import pyspark
 from graphframes import *
 
 # used for reading in csv file 
@@ -10,48 +12,35 @@ schema = StructType([
     StructField("business_id", StringType(), True)
 ])
 
-# running: spark-submit --packages graphframes:graphframes:0.8.2-spark3.2-s_2.12 task1.py
-def main(input_file, output_file, threshold, sc, sqlContext):
+def main(filter_threshold, input_file, output_file, sc, sqlContext):
 
+    # reading in file 
     df = sqlContext.read.format("csv") \
         .option("header", "true") \
         .schema(schema) \
         .load(input_file) 
-        
-    # looks like via df.show()
-    # +--------------------+--------------------+
-    # |             user_id|         business_id|
-    # +--------------------+--------------------+
-    # |39FT2Ui8KUXwmUt6h...|RJSFI7mxGnkIIKiJC...|
-    # |39FT2Ui8KUXwmUt6h...|fThrN4tfupIGetkrz...|
-    # |39FT2Ui8KUXwmUt6h...|mvLdgkwBzqllHWHwS...|
-    # |39FT2Ui8KUXwmUt6h...|uW6UHfONAmm8QttPk...|
-    # |39FT2Ui8KUXwmUt6h...|T70pMoTP008qYLsIv...|
-    # +--------------------+--------------------+
-        
-    # easier for me to work with rdds 
+    # converting to rdd
     rdd = df.rdd 
-    # at this point we need to give each user and each business and id because it takes up less memory 
-    # goal is to map all the distinct users to an integer id  
+    # converting a user_id to an integer to save memory
     user_to_int = rdd.map(lambda x: x[0]) \
         .distinct() \
         .zipWithIndex()
     user_to_int_dict = user_to_int.collectAsMap() 
+    # making sure every node gets broadcasted the translation from user_id to int
     user_to_int_dict = sc.broadcast(user_to_int_dict)
-    # user_count = user_to_int.count()
-    
+    # doing the same for business_ids so I can save memory
     b_to_int = rdd.map(lambda x: x[1]) \
         .distinct() \
         .zipWithIndex()
     b_to_int_dict = b_to_int.collectAsMap()
     b_to_int_dict = sc.broadcast(b_to_int_dict)
-    
+
     # going from (user, b) -> (int_of_user, int_of_b) -> (user, set(b)) we have integers rather than full ids 
     # then 
     translated_pairs = rdd.map(lambda x: (user_to_int_dict.value[x[0]], b_to_int_dict.value[x[1]])) \
         .groupByKey() \
         .mapValues(set)
-
+            
     def isEdge(x):
         '''
         If two users have >= threshold # of businesses in common they have an edge connecting them
@@ -61,98 +50,87 @@ def main(input_file, output_file, threshold, sc, sqlContext):
         b1 = x[0][1] 
         # second user 
         b2 = x[1][1]
-        intersection = b1 & b2
-        if (len(intersection) >= threshold):
+        intersection = b1.intersection(b2)
+        if (len(intersection) >= filter_threshold):
             return True
         return False
-    
     # creating pairs like ((0, {0, 1, 2, 3, 4, 5, 6, 7, 8, ...}), (1, {2, 10, 21, 32, 57, 64, 79, 92, 93, ...})) etc so I can check if they have an edge or not
-    # the filter remove duplicate pairs
+    # the filter remove duplicate pairs after the cartesian
+    # after which we check if there is an edge between two pairs of nodes 
     all_pairs = translated_pairs.cartesian(translated_pairs) \
         .filter(lambda x: x[0][0] != x[1][0]) \
         .filter(isEdge)
-    # edges = all_pairs.map(lambda x: (x[0][0], x[1][0])) \
-    #     .map(frozenset) \
-    #     .distinct() \
-    #     .map(tuple)
+
+    # note above I am filtering By my isEdge so we get pairs of edges like
+    #  [(0, 1), (0, 3), (0, 5), (0, 10), (0, 14), (0, 16), (0, 19), (0, 20), (0, 23), (0, 28)]
     edges = all_pairs.map(lambda x: (x[0][0], x[1][0])) \
-        .distinct()
+        .distinct() \
+        .map(lambda x: tuple(x))
+    # Then we can use those edges to extract the nodes to get
+    # [0, 1, 3, 5, 10, 14, 16, 19, 20, 23]
     nodes = edges.flatMap(lambda x: x).distinct()
     print("number of edges in the graph:", edges.count())
     print("number of nodes in the graph:", nodes.count())
     # now we need to create the dictionaries to convert the integers backs into their string ids 
     int_to_user = user_to_int.map(lambda x: (x[1], x[0])).collectAsMap()
-    int_to_user = sc.broadcast(int_to_user)
-    # note we don't need to translate the businesses back into their strings because we only care about nodes and edges 
-    # now we need to convert our nodes and edges back to a dataframe so we can use GraphFrame 
-    # +--------------------+--------------------+
-    # |                 src|                 dst|
-    # +--------------------+--------------------+
-    # |39FT2Ui8KUXwmUt6h...|0FVcoJko1kfZCrJRf...|
-    # |39FT2Ui8KUXwmUt6h...|JM0GL6Dx4EuZ1mprL...|
-    # |39FT2Ui8KUXwmUt6h...|bSUS0YcvS7UelmHvC...|
-    # |39FT2Ui8KUXwmUt6h...|DKolrsBSwMTpTJL22...|
-    # +--------------------+--------------------+
+    int_to_user = sc.broadcast(int_to_user)    
+    # turns my of tuples into a relation table of src and dst nodes 
     graphEdges = edges.map(lambda x: (int_to_user.value[x[0]], int_to_user.value[x[1]])).toDF(["src", "dst"]) # edge between user1 and user2
-    # +--------------------+
-    # |             user_id|
-    # +--------------------+
-    # |39FT2Ui8KUXwmUt6h...|
-    # |0FVcoJko1kfZCrJRf...|
-    # |JM0GL6Dx4EuZ1mprL...|
-    # +--------------------+    
+    # nodes are just a table with 1 col of nodes
     graphNodes = nodes.map(lambda x: int_to_user.value[x]).map(lambda x: (x,)).toDF(["id"])
-    
-    # creating graph to run labelPropgation on
+
     graph = GraphFrame(graphNodes, graphEdges)
     communities = graph.labelPropagation(maxIter=5)
-    # communities.show(4)
-    # now we have a dataframe that looks like: 
-    # +--------------------+------------+
-    # |                  id|       label|
-    # +--------------------+------------+
-    # |oegRUjhGbP62M18Wy...|678604832768|
-    # |gH0dJQhyKUOVCKQA6...|146028888064|
-    # |2quguRdKBzul3GpRi...|627065225216|
-    # |DPtOaWemjBPvFiZJB...|867583393794|
-    # +--------------------+------------+
-    # And we want to prepare the data to write to file where we have each line reprsent a community with the users that are in the community
-    # 1) swap the ids and labels that way we get (community_id, user_id)
-    # 2) groupByKey so we get all the users that are in the community 
-    # 3) sort the user_ids lexigraphically (in alphabetic order)
-    # 4) sort by size of community (the length of the corresponding user list)
-    # make sure to convert back to an rdd
-    processed = communities.rdd.map(lambda x: (x[1], x[0])) \
+    # recall labelPropagation gives us a community_id and node so we groupby key to create the communities and all we want are the communities without the id so I do map x[1]
+    communities = communities.rdd.map(lambda x: (x[1], x[0])) \
         .groupByKey().mapValues(list) \
-        .map(lambda x: sorted(x[1])) \
-        .sortBy(lambda x: (len(x), x[0]))
-    # note the final .sortBy(lambda x: (len(x), x[0])) sorts the rdd be based on these priorities
-    # 1. The number of users who are in the cluster
-    # 2. The lexographic value of the cluster_id which I'm pretty sure is a string
-    final_result = processed.collect()
-    with open(output_file, 'w') as f: 
-        for r in final_result:
-            f.write(f'{r}\n')
- 
+        .map(lambda x: x[1]) \
+        .collect()
+    # example of identified communities
+    # communities = [['23y0Nv9FFWn_3UWudpnFMA'],['3Vd_ATdvvuVVgn_YCpz8fw'], ['0KhRPd66BZGHCtsb9mGh_g', '5fQ9P6kbQM_E0dx8DL6JWA' ]]
+    for i in communities:
+        print(i)
 
+    """ code for saving the output to file in the correct format """
+    resultDict = {}
+    for community in communities:
+        community = list(map(lambda userId: "'" + userId + "'", sorted(community)))
+        community = ", ".join(community)
 
+        if len(community) not in resultDict:
+            resultDict[len(community)] = []
+        resultDict[len(community)].append(community)
+
+    results = list(resultDict.items())
+    results.sort(key = lambda pair: pair[0])
+
+    output = open(output_file, "w")
+
+    for result in results:
+        resultList = sorted(result[1])
+        for community in resultList:
+            output.write(community + "\n")
+    output.close()
+    
 if __name__ == '__main__':
-
-
-    conf = pyspark.SparkConf().setAppName("Task1").setMaster("local[*]")
-    sc = pyspark.SparkContext(conf = conf)
-    sc.setLogLevel("ERROR")
-
+    start_time = time.time()
+    sc_conf = pyspark.SparkConf() \
+        .setAppName('hw4') \
+        .setMaster('local[*]') \
+        .set('spark.driver.memory', '4g') \
+        .set('spark.executor.memory', '4g')
+    
+    sc = pyspark.SparkContext(conf=sc_conf)
+    sc.setLogLevel("OFF")
     sqlContext = pyspark.sql.SparkSession.builder \
-        .appName("Task1").master("local[*]").getOrCreate()    
-    
+        .appName("Task1").master("local[*]").getOrCreate()   
     parser = argparse.ArgumentParser(description='A1T1')
-    parser.add_argument('--filter_threshold', type=int, default=7)
-    parser.add_argument('--input_file', type=str, default='./data/ub_sample_data.csv')
-    parser.add_argument('--community_output_file', type=str, default='./outputs/task1.out')
-    
+    parser.add_argument('--filter_threshold', type=int, default=7, help='')
+    parser.add_argument('--input_file', type=str, default='./ub_sample_data.csv', help='the input file')
+    parser.add_argument('--community_output_file', type=str, default='./result.txt', help='the output file contains your answers')
     args = parser.parse_args()
-
-    main(args.input_file, args.community_output_file, args.filter_threshold, sc, sqlContext)
-
-    sc.stop() 
+    
+    main(args.filter_threshold, args.input_file, args.community_output_file, sc, sqlContext)
+    end_time = time.time()
+    print(f"runtime: {end_time - start_time}")
+    sc.stop()
