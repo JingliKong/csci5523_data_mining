@@ -6,8 +6,17 @@ class TreeNode:
         self.parent = set() # set of TreeNodes representing the parents
         self.children = set() # set of TreeNodes representing the nodes that are the children
     def __repr__(self):
-        return f"[name: {self.name}, level: {self.level}, parent: {self.parent}, children: {self.children}]"
+        # return f"[name: {self.name}, level: {self.level}, parent: {self.parent}, children: {self.children}]"
         # return f"[name: {self.name}, parent: {self.parent}]"
+        parents = []
+        children = []
+        score = self.score
+        if len(self.children) != 0:
+            children = [p.name for p in self.children]
+        if len(self.parent) != 0:
+            parents = [p.name for p in self.parent]
+        
+        return f"node:{self.name}, children: {children}, parents: {parents}, score: {score}"
 
 # source: https://www.tutorialspoint.com/python_data_structure/python_graphs.htm
 # I am using how this article describes graphs in python to represent the graphs for my task2
@@ -156,9 +165,9 @@ def calcWeightsForGN(graph: MyGraph, queue: list[TreeNode]) -> dict[frozenset]:
 
 graph_elements = { 
    "A" : ["B","C"],
-   "B" : ["A", "D", "C"],
+   "B" : ["A", "C"],
    "C" : ["A", "B"],
-   "D" : ["E", "F", "G"],
+   "D" : ["B", "G"],
    "E" : ["D", "F"],
    "F" : ["D", "E", "G"],
    "G" : ["D", "F"]
@@ -171,30 +180,23 @@ g = MyGraph (graph_elements)
 
 # create a tree from my graph from a particular node
 tree = g.createTree("E")
-# for t in tree:
-#     print(t)
+for t in tree:
+    print(t)
 # for the tree calculate all the edges and weights for nodes
 # everything works we guchi
-betweeness = calcWeightsForGN(g, tree)  # {frozenset({'A', 'B'}): 1.0, frozenset({'A', 'C'}): 0, frozenset({'B', 'C'}): 1.0, frozenset({'B', 'D'}): 3.0, frozenset({'G', 'D'}): 0.5, frozenset({'E', 'D'}): 4.5, frozenset({'E', 'F'}): 1.5, frozenset({'F', 'D'}): 0, frozenset({'F', 'G'}): 0.5}
+# betweeness = calcWeightsForGN(g, tree)  # {frozenset({'A', 'B'}): 1.0, frozenset({'A', 'C'}): 0, frozenset({'B', 'C'}): 1.0, frozenset({'B', 'D'}): 3.0, frozenset({'G', 'D'}): 0.5, frozenset({'E', 'D'}): 4.5, frozenset({'E', 'F'}): 1.5, frozenset({'F', 'D'}): 0, frozenset({'F', 'G'}): 0.5}
 
 # testing if we can calculate the betweeness for the entire graph
 # nodes that we bfs we will eventually use them to calculate betweeness 
-nodes = []
-for k, v in graph_elements.items():
-    nodes.append(g.createTree(k))
+# nodes = []
+# for k, v in graph_elements.items():
+#     nodes.append(g.createTree(k))
 
-all_betweenesses: list[dict] = []
-for n in nodes:
-    all_betweenesses.append(calcWeightsForGN(g, n))
+# all_betweenesses: list[dict] = []
+# for n in nodes:
+#     all_betweenesses.append(calcWeightsForGN(g, n))
 
-sum_betweeness = {}
-# everyone has the same keys so we just add all their values up
-for d in all_betweenesses:
-    for k, v in d.items():
-        if k not in sum_betweeness:
-            sum_betweeness[k] = v
-        else:
-            sum_betweeness[k] += v 
- 
+# sum_betweeness = g.createEdgeDict()
+# # for b in all_betweenesses:
 
 print()
