@@ -26,20 +26,19 @@ def createGraph(nodes, edges):
     edges: [(0, 1), (0, 3), (0, 5), (0, 10), (0, 14), (0, 16), (0, 19), (0, 20), (0, 23), (0, 28)]
     nodes: [0, 1, 3, 5, 10, 14, 16, 19, 20, 23]
     '''
-
     graph = {node: [] for node in nodes}
-
     for node in nodes:
         for edge in edges:
             if node in edge:
                 other_node = edge[0] if edge[1] == node else edge[1]
-                graph[node].append(other_node)
+                if other_node not in graph[node]:
+                    graph[node].append(other_node)
                 
     return graph
-
-test_nodes = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
-test_edges = [('A', 'B'), ('A', 'C'), ('C', 'B'), ('D', 'B'), ('E', 'D'), ('F', 'D'), ('G', 'D'), ('F', 'E'), ('F', 'G')]
-print(createGraph(test_nodes, test_edges))
+# testing
+# test_nodes = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+# test_edges = [('A', 'B'), ('A', 'C'), ('C', 'B'), ('D', 'B'), ('E', 'D'), ('F', 'D'), ('G', 'D'), ('F', 'E'), ('F', 'G')]
+# print(createGraph(test_nodes, test_edges))
 
 # source: https://www.tutorialspoint.com/python_data_structure/python_graphs.htm
 # I am using how this article describes graphs in python to represent the graphs for my task2
@@ -163,6 +162,33 @@ def calcWeightsForGN(graph: MyGraph, tree: list[TreeNode]) -> dict[frozenset]:
 
 # testing Girvan newman alg
 
+# graph_elements = { 
+#    "A" : ["B","C"],
+#    "B" : ["A", "C", "D"],
+#    "C" : ["A", "B"],
+#    "D" : ["B", "E", "F", "G"],
+#    "E" : ["D", "F"],
+#    "F" : ["D", "E", "G"],
+#    "G" : ["D", "F"]
+# }
+
+# create a graph using graph elements 
+# g = MyGraph (graph_elements)
+# print(g.nodes)
+# print([tuple(item) for item in g.edges])
+# !!!!!!!!EACH PROC NEEDS ITS OWN GRAPH MY DUDE
+
+# create a tree from my graph from a particular node
+# tree = g.createTree("E")
+# for t in tree:
+#     print(t)
+# for the tree calculate all the edges and weights for nodes
+# everything works we guchi
+# betweeness = calcWeightsForGN(g, tree)  # {frozenset({'A', 'B'}): 1.0, frozenset({'A', 'C'}): 0, frozenset({'B', 'C'}): 1.0, frozenset({'B', 'D'}): 3.0, frozenset({'G', 'D'}): 0.5, frozenset({'E', 'D'}): 4.5, frozenset({'E', 'F'}): 1.5, frozenset({'F', 'D'}): 0, frozenset({'F', 'G'}): 0.5}
+
+# testing if we can calculate the betweeness for the entire graph
+# nodes that we bfs we will eventually use them to calculate betweeness 
+
 graph_elements = { 
    "A" : ["B","C"],
    "B" : ["A", "C", "D"],
@@ -172,36 +198,20 @@ graph_elements = {
    "F" : ["D", "E", "G"],
    "G" : ["D", "F"]
 }
-
-# create a graph using graph elements 
 g = MyGraph (graph_elements)
-print(g.nodes)
-print([tuple(item) for item in g.edges])
-# !!!!!!!!EACH PROC NEEDS ITS OWN GRAPH MY DUDE
+trees = []
+for k, v in graph_elements.items():
+    trees.append(g.createTree(k))
 
-# create a tree from my graph from a particular node
-tree = g.createTree("E")
-# for t in tree:
-#     print(t)
-# for the tree calculate all the edges and weights for nodes
-# everything works we guchi
-# betweeness = calcWeightsForGN(g, tree)  # {frozenset({'A', 'B'}): 1.0, frozenset({'A', 'C'}): 0, frozenset({'B', 'C'}): 1.0, frozenset({'B', 'D'}): 3.0, frozenset({'G', 'D'}): 0.5, frozenset({'E', 'D'}): 4.5, frozenset({'E', 'F'}): 1.5, frozenset({'F', 'D'}): 0, frozenset({'F', 'G'}): 0.5}
+all_betweenesses: list[dict] = []
+for tree in trees:
+    all_betweenesses.append(calcWeightsForGN(g, tree))
 
-# testing if we can calculate the betweeness for the entire graph
-# nodes that we bfs we will eventually use them to calculate betweeness 
-# trees = []
-# for k, v in graph_elements.items():
-#     trees.append(g.createTree(k))
-
-# all_betweenesses: list[dict] = []
-# for tree in trees:
-#     all_betweenesses.append(calcWeightsForGN(g, tree))
-
-# sum_betweeness = g.createEdgeDict()
-# for b in all_betweenesses:
-#     for k, v in b.items():
-#         sum_betweeness[k] += v
-# sum_betweeness = {k: v/2 for k, v in sum_betweeness.items()} 
-# print(sum_betweeness)
+sum_betweeness = g.createEdgeDict()
+for b in all_betweenesses: 
+    for k, v in b.items():
+        sum_betweeness[k] += v
+sum_betweeness = {k: v/2 for k, v in sum_betweeness.items()} 
+print(sum_betweeness)
 
 # yo this works lets goo
