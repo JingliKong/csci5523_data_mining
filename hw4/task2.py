@@ -74,7 +74,49 @@ def main(input_file, betweeness_output_file, community_output_file, filter_thres
     with open(betweeness_output_file, 'w') as f:
         for r in final_results:
             f.write(f'({r[0][0]}, {r[0][1]}), {r[1]}\n')
-    print()
+    # starting part 2 Community Detection
+    M = len(myGraph.edges)
+    A = myGraph.gdict
+    best_cut = frozenset((user_to_int_dict.value[final_results[0][0][0]], user_to_int_dict.value[final_results[0][0][1]]))
+    current_graph = graph_utils.MyGraph(myGraph.gdict).removeEdge(best_cut) # best_community starts out as the first cut we make because thats all we have for now 
+    modularity = graph_utils.findModularity(A, current_graph, M) # (community, modularity score)
+    best_modularity = modularity
+    
+    for i in range(len(myGraph.edges)):
+        trees = sc.parallelize(current_graph.nodes).map(lambda x: current_graph.createTree(x))
+        largest_betweenness = trees.map(lambda x: graph_utils.calcWeightsForGN(current_graph, x)) \
+            .flatMap(lambda x: x.items()) \
+            .reduceByKey(lambda a, b: a+b) \
+            .mapValues(lambda x: x/2) \
+            .map(lambda x: (tuple(x[0]), x[1])) \
+            .max(key=lambda x: x[1]) # give you the best cut
+        next_graph = graph_utils.MyGraph(current_graph.gdict).removeEdge(largest_betweenness[0]) # the edge to cut is the first element of the tuple
+        modularity = graph_utils.findModularity(A, next_graph, M)
+        if (modularity[1] > best_modularity[1]):
+            best_modularity = modularity
+        if (len(next_graph.edges) == 0):
+            break
+        current_graph = next_graph
+        # print(f'i: {i} {best_modularity[1]}')
+    best_communities = sc.parallelize(best_modularity[0])
+    def translate_to_user(x):
+        community = list(x)
+        translated = []
+        for user in community:
+            translated.append(int_to_user.value[user])
+        return translated
+    best_communities = best_communities.map(lambda x: translate_to_user(x)) \
+        .map(lambda x: sorted(x)) \
+        .sortBy(lambda x: (len(x), x[0])) \
+        .collect()
+
+    with open(community_output_file, 'w') as f:
+        for c in best_communities:
+            f.write(f'{c}\n')
+            
+        
+    # print(best_modularity)
+    # print()
 if __name__ == '__main__':
     start_time = time.time()
     sc_conf = pyspark.SparkConf() \

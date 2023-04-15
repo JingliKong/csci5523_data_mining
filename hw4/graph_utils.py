@@ -1,5 +1,6 @@
 import math
 import queue 
+import copy
 class TreeNode:
     def __init__(self, name, height):
         self.name = name
@@ -50,14 +51,17 @@ class MyGraph:
         if gdict == None: 
             self.gdict = []
 
-        self.gdict = gdict
+        self.gdict = copy.deepcopy(gdict) # nodes and their neighbors "A" : ["B","C"],
         # number of nodes we have 
         self.num_nodes = len(self.gdict)
         # the nodes in our graph
         self.nodes = list(self.gdict.keys())
+        # hold a dictionary of how many edges each node has
+        self.nodes_edges_dict = self.nodesEdgesDict()
         # initializing our edges to a list
         self.edges = self.findEdges()
         self.edgeDict = self.createEdgeDict()
+    
     # gets the number of nodes aka vertices in the 
     
     def getVertices(self):
@@ -72,8 +76,25 @@ class MyGraph:
                 if candidate_edge not in edges:
                     edges.append(candidate_edge)
         return edges
+    def removeEdge(self, edge: tuple):
+        '''
+        edge: frozenset({'D', 'B'})
+        removes an edge from the graph and updates all the nodes and edge dictionaries accordingly
+        '''
+        edge = tuple(edge)
+        self.gdict[edge[0]].remove(edge[1])
+        self.gdict[edge[1]].remove(edge[0])
+        self.nodes = list(self.gdict.keys())
+        self.edges = self.findEdges()
+        self.edgeDict = self.createEdgeDict()
+        return self
     def createEdgeDict(self):
         return {e: 0 for e in self.findEdges()}
+    def nodesEdgesDict(self): # used for k_i and k_j during community detection
+        output_dict = {}
+        for k,v in self.gdict.items():
+            output_dict[k] = len(v)
+        return output_dict
     def createTree (self, start):
         '''
         Build a tree using TreeNode using bfs
@@ -112,8 +133,21 @@ class MyGraph:
                             myQueue.put(node)
                             visited_nodes.append(node.name)
             bfs_results.append(current_node)
-        return bfs_results                        
-            
+        return bfs_results      
+    def bfs(self, start):
+        # returns strings of all the nodes visited following a bfs                  
+        myQueue = queue.Queue()
+        myQueue.put(start)
+        visited = []
+        while (myQueue.qsize() != 0):
+            node = myQueue.get()
+            if node not in visited:
+                visited.append(node)
+            for neighbor in self.gdict[node]:
+                if neighbor not in visited:
+                    visited.append(neighbor) 
+                    myQueue.put(neighbor)
+        return visited  
 def calcWeightsForGN(graph: MyGraph, tree: list[TreeNode]) -> dict[frozenset]:
     '''assigns the node weights and edge weights for the Girvan-Newman alg'''
     edge_betweeness = {edge: 0 for edge in graph.edges}
@@ -137,11 +171,84 @@ def calcWeightsForGN(graph: MyGraph, tree: list[TreeNode]) -> dict[frozenset]:
                 edge_betweeness[edge] += credit
                 p.score += credit
 
-
     return edge_betweeness
 
+def find_communities(graph: MyGraph):
+    communities = []
+    nodes_visited = set()
+    for node in graph.nodes:
+        if node not in nodes_visited:
+            community = set(graph.bfs(node))
+            communities.append(community)
+            nodes_visited = nodes_visited.union(community)
+    return communities    
 
-    
+
+def findModularity(starting_graph: dict, current_graph: MyGraph, m: int):
+    '''m is the number of edges in the orginal graph'''
+    from itertools import combinations
+    communities = find_communities(current_graph)
+    total = 0 
+    # m = len(starting_graph.edges)
+    for community in communities:
+        pairs = combinations(community, 2)
+        for p in pairs:
+            node_i = p[0]
+            node_j = p[1]
+            k_i = current_graph.nodes_edges_dict[node_i]
+            k_j = current_graph.nodes_edges_dict[node_j]
+            A_i_j = 1 if node_j in starting_graph[node_i] else 0
+            total += A_i_j - (k_i * k_j / (2*m))
+    return (communities, total / (2*m)) # communities, mod score
+# testing finding communities 
+# graph_elements = { 
+#    "A" : ["B","C"],
+#    "B" : ["A", "C", "D"],
+#    "C" : ["A", "B"],
+#    "D" : ["B", "E", "F", "G"],
+#    "E" : ["D", "F"],
+#    "F" : ["D", "E", "G"],
+#    "G" : ["D", "F"]
+# }
+
+ 
+# starting_graph = MyGraph(graph_elements)
+# trees = []
+# for k, v in graph_elements.items():
+#     trees.append(starting_graph.createTree(k))
+#     all_betweenesses: list[dict] = []
+# for tree in trees:
+#     all_betweenesses.append(calcWeightsForGN(starting_graph, tree))
+#     sum_betweeness = starting_graph.createEdgeDict()
+# for b in all_betweenesses: 
+#     for k, v in b.items():
+#         sum_betweeness[k] += v
+# sum_betweeness = {k: v/2 for k, v in sum_betweeness.items()} 
+# largest_betweenness = max(sum_betweeness, key=sum_betweeness.get)
+# current_graph = MyGraph(starting_graph.gdict).removeEdge(largest_betweenness)
+
+# modularity = findModularity(starting_graph, current_graph)
+# best_modularity = modularity # (community, modularity score)
+
+# next_graph = None
+# for i in range(len(starting_graph.edges) - 1):
+#     trees = []
+#     for k, v in graph_elements.items():
+#         trees.append(current_graph.createTree(k))
+#         all_betweenesses: list[dict] = []
+#     for tree in trees:
+#         all_betweenesses.append(calcWeightsForGN(current_graph, tree))
+#         sum_betweeness = current_graph.createEdgeDict()
+#     for b in all_betweenesses: 
+#         for k, v in b.items():
+#             sum_betweeness[k] += v
+#     sum_betweeness = {k: v/2 for k, v in sum_betweeness.items()} 
+#     largest_betweenness = max(sum_betweeness, key=sum_betweeness.get)
+#     next_graph = MyGraph(current_graph.gdict).removeEdge(largest_betweenness)
+#     modularity = findModularity(starting_graph, current_graph)
+#     if (modularity[1] > best_modularity[1]):
+#         best_modularity = modularity
+# print()
 # TESTING
 
 # graph_elements = { 
@@ -189,29 +296,29 @@ def calcWeightsForGN(graph: MyGraph, tree: list[TreeNode]) -> dict[frozenset]:
 # testing if we can calculate the betweeness for the entire graph
 # nodes that we bfs we will eventually use them to calculate betweeness 
 
-graph_elements = { 
-   "A" : ["B","C"],
-   "B" : ["A", "C", "D"],
-   "C" : ["A", "B"],
-   "D" : ["B", "E", "F", "G"],
-   "E" : ["D", "F"],
-   "F" : ["D", "E", "G"],
-   "G" : ["D", "F"]
-}
-g = MyGraph (graph_elements)
-trees = []
-for k, v in graph_elements.items():
-    trees.append(g.createTree(k))
+# graph_elements = { 
+#    "A" : ["B","C"],
+#    "B" : ["A", "C", "D"],
+#    "C" : ["A", "B"],
+#    "D" : ["B", "E", "F", "G"],
+#    "E" : ["D", "F"],
+#    "F" : ["D", "E", "G"],
+#    "G" : ["D", "F"]
+# }
+# g = MyGraph (graph_elements)
+# trees = []
+# for k, v in graph_elements.items():
+#     trees.append(g.createTree(k))
 
-all_betweenesses: list[dict] = []
-for tree in trees:
-    all_betweenesses.append(calcWeightsForGN(g, tree))
+# all_betweenesses: list[dict] = []
+# for tree in trees:
+#     all_betweenesses.append(calcWeightsForGN(g, tree))
 
-sum_betweeness = g.createEdgeDict()
-for b in all_betweenesses: 
-    for k, v in b.items():
-        sum_betweeness[k] += v
-sum_betweeness = {k: v/2 for k, v in sum_betweeness.items()} 
-print(sum_betweeness)
+# sum_betweeness = g.createEdgeDict()
+# for b in all_betweenesses: 
+#     for k, v in b.items():
+#         sum_betweeness[k] += v
+# sum_betweeness = {k: v/2 for k, v in sum_betweeness.items()} 
+# print(sum_betweeness)
 
 # yo this works lets goo
