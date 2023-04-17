@@ -1,11 +1,15 @@
 import math
 import queue 
 import copy
+from decimal import Decimal, getcontext
+# set the precision you want
+getcontext().prec = 28
+
 class TreeNode:
     def __init__(self, name, height):
         self.name = name
         self.level = height #FIXME maybe dont need
-        self.score = 1
+        self.score = 1.0
         self.parent = set() # set of TreeNodes representing the parents
         self.children = set() # set of TreeNodes representing the nodes that are the children
     def __repr__(self):
@@ -95,7 +99,7 @@ class MyGraph:
         for k,v in self.gdict.items():
             output_dict[k] = len(v)
         return output_dict
-    def createTree (self, start):
+    def createTree(self, start):
         '''
         Build a tree using TreeNode using bfs
         start: the starting node for our bfs 
@@ -103,10 +107,10 @@ class MyGraph:
         '''
         nodes = []
         bfs_results = []
-        visited_nodes: list[str] = [] # names of the nodes that we have visited 
-        # first initialize all the TreeNodes we'll need for this tree 
+        visited_nodes: list[str] = []  # names of the nodes that we have visited
+        # first initialize all the TreeNodes we'll need for this tree
         for n in self.nodes:
-            nodes.append(TreeNode(n,math.inf))
+            nodes.append(TreeNode(n, math.inf))
         # we have to find our starting node
         root = None
         for n in nodes:
@@ -114,26 +118,38 @@ class MyGraph:
                 root = n
                 n.level = 0
                 break
+        # add the root to the visited_nodes list
+        visited_nodes.append(root.name)
         # create a queue starting at the starting node which is the root
         assert (root != None)
         myQueue = queue.Queue()
         myQueue.put(root)
+        # initialize the shortest path counts
+        shortest_paths_count = {node.name: 0 for node in nodes}
+        shortest_paths_count[root.name] = 1
         # iterate until the queue is empty
-        while (myQueue.qsize() != 0): # TODO add max iter
+        while (myQueue.qsize() != 0):  # TODO add max iter
             current_node = myQueue.get()
-            neighbors = self.gdict[current_node.name] # list of nodes that are neighbors
+            neighbors = self.gdict[current_node.name]  # list of nodes that are neighbors
             # look through allocated nodes and see which ones are our neighbors
             for n in neighbors:
                 for node in nodes:
                     if node.name == n and node.level > current_node.level:
                         node.level = current_node.level + 1
                         node.parent.add(current_node)  # setting the parent as a ref to the current node
-                        current_node.children.add(node) 
+                        current_node.children.add(node)
                         if (node.name not in visited_nodes):
                             myQueue.put(node)
                             visited_nodes.append(node.name)
+                        # update the shortest path count
+                        shortest_paths_count[node.name] += shortest_paths_count[current_node.name]
             bfs_results.append(current_node)
-        return bfs_results      
+        # assign scores to each node based on the shortest path count
+        for node in nodes:
+            node.score = shortest_paths_count[node.name] / shortest_paths_count[start]
+        return bfs_results
+
+      
     def bfs(self, start):
         # returns strings of all the nodes visited following a bfs                  
         myQueue = queue.Queue()
@@ -161,15 +177,28 @@ def calcWeightsForGN(graph: MyGraph, tree: list[TreeNode]) -> dict[frozenset]:
                 per_level.append(node)
         levels_of_tree.append(per_level)
         starting_level -= 1
-    for level in levels_of_tree:   
-        for node in level:
-            credit = 0
-            if (len(node.parent) != 0):
-                credit = node.score / len(node.parent)
+
+    # first covering the case for the leaves of the tree
+    for leaf in levels_of_tree[0]:
+        credit = 1  
+        for p in leaf.parent:
+            ratio = p.score / leaf.score 
+            local_credit = credit * ratio
+            edge = frozenset((leaf.name, p.name))
+            edge_betweeness[edge] += local_credit
+    # at this point we finished adding the weights for all the leaves 
+    # computing weights for all other nodes so we have to include the weights of edges coming in
+    for level in range(1, len(levels_of_tree), 1):
+        for node in levels_of_tree[level]:
+            credit = 1 # default credit
+            for child in node.children:
+                edge_coming_in = frozenset((child.name, node.name))
+                credit += edge_betweeness[edge_coming_in] 
             for p in node.parent:
-                edge = frozenset((node.name,p.name))
-                edge_betweeness[edge] += credit
-                p.score += credit
+                ratio = p.score / node.score
+                local_credit = credit * ratio
+                edge = frozenset((node.name, p.name))
+                edge_betweeness[edge] += local_credit
 
     return edge_betweeness
 
