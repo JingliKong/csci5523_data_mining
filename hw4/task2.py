@@ -42,6 +42,7 @@ def main(input_file, betweeness_output_file, community_output_file, filter_thres
     all_pairs = translated_pairs.cartesian(translated_pairs) \
         .filter(lambda x: x[0][0] != x[1][0]) \
         .filter(isEdge)   
+    # note above I am fil
     # note above I am filtering By my isEdge so we get pairs of edges like
     #  [(0, 1), (0, 3), (0, 5), (0, 10), (0, 14), (0, 16), (0, 19), (0, 20), (0, 23), (0, 28)]
     edges = all_pairs.map(lambda x: (x[0][0], x[1][0])) \
@@ -77,27 +78,40 @@ def main(input_file, betweeness_output_file, community_output_file, filter_thres
     # starting part 2 Community Detection
     M = len(myGraph.edges)
     A = myGraph.gdict
+    stop_checking = M / 2 # we stop trying to get out of our old local max here 
     best_cut = frozenset((user_to_int_dict.value[final_results[0][0][0]], user_to_int_dict.value[final_results[0][0][1]]))
     current_graph = graph_utils.MyGraph(myGraph.gdict).removeEdge(best_cut) # best_community starts out as the first cut we make because thats all we have for now 
     modularity = graph_utils.findModularity(A, current_graph, M) # (community, modularity score)
     best_modularity = modularity
     
+    next_best_index = 2 # we don't always make the cut with the highest betweenness
     for i in range(len(myGraph.edges)):
         trees = sc.parallelize(current_graph.nodes).map(lambda x: current_graph.createTree(x))
         largest_betweenness = trees.map(lambda x: graph_utils.calcWeightsForGN(current_graph, x)) \
             .flatMap(lambda x: x.items()) \
             .reduceByKey(lambda a, b: a+b) \
             .mapValues(lambda x: x/2) \
-            .map(lambda x: (tuple(x[0]), x[1])) \
-            .max(key=lambda x: x[1]) # give you the best cut
-        next_graph = graph_utils.MyGraph(current_graph.gdict).removeEdge(largest_betweenness[0]) # the edge to cut is the first element of the tuple
+            .map(lambda x: (tuple(x[0]), x[1]))
+
+        max_cut = largest_betweenness.max(key=lambda x: x[1]) # give you the best cut
+        best_betweennesses = largest_betweenness.filter(lambda x: x[1] == max_cut[1]).collect()
+        next_graph = graph_utils.MyGraph(current_graph.gdict) # the edge to cut is the first element of the tuple
+        # if (len(largest_betweenness) != 1): #DEBUG
+        #     print(largest_betweenness)
+        for j in range(len(best_betweennesses)):
+            next_graph.removeEdge(best_betweennesses[j][0])
+        # for edge in largest_betweenness: #DEBUG
+        #     assert edge[0] not in next_graph.gdict 
         modularity = graph_utils.findModularity(A, next_graph, M)
+        # print(f'current mod: {modularity[1]} old mod:{best_modularity[1]}') #DEBUG
         if (modularity[1] > best_modularity[1]):
             best_modularity = modularity
+        else:
+            print(f'current mod: {modularity[1]} old mod:{best_modularity[1]}') #DEBUG
         if (len(next_graph.edges) == 0):
             break
         current_graph = next_graph
-        # print(f'i: {i} {best_modularity[1]}')
+        print(f'i: {i} {best_modularity[1]}') #DEBUG
     best_communities = sc.parallelize(best_modularity[0])
     def translate_to_user(x):
         community = list(x)
@@ -112,7 +126,8 @@ def main(input_file, betweeness_output_file, community_output_file, filter_thres
 
     with open(community_output_file, 'w') as f:
         for c in best_communities:
-            f.write(f'{c}\n')
+            temp = ','.join(str(x) for x in c)
+            f.write(f'{temp}\n')
             
         
     # print(best_modularity)
