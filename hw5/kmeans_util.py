@@ -1,7 +1,6 @@
-
-
 import math
 
+MAX_ITER = 1000
 class KMeans: # object to hold information for kmeans
     # Data set to be clustered                      
     ndata    = 0                     # count of data
@@ -54,17 +53,18 @@ def init_centroids(k: KMeans):
         # max_idx index for the feature that is the farthest away from our starting point
         max_idx = min_distances.index(max_dist) # recall that the min_distances have the same index as our original features list 
         k.centroids.append(k.features[max_idx])
-def assignPoints(k: KMeans):
+def assignPoints(point: tuple[str, list[float]], centroids: list[float]):
     '''Assigns points to clusters based on how close they are to a centroid''' 
     new_clusters = [[] for _ in range(k.nclust)]
-    for i in range(len(k.features)):
-        # find the closest centroid
-        distances = []
-        for centroid in k.centroids:
-            distances.append(euclidean_distance(k.features[i], centroid)) # finding the distance between the point and a centroid
-        closest_idx = distances.index(min(distances)) # idx of the closest centroid
-        new_clusters[closest_idx].append(k.labels[i]) # hold the id for whatever feature we decide to put in this cluster
-    k.clusters = new_clusters
+    label = point[0]
+    feature = point[1]
+    # find the closest centroid
+    distances = []
+    for centroid in centroids:
+        distances.append(euclidean_distance(feature, centroid)) # finding the distance between the point and a centroid
+    closest_idx = distances.index(min(distances)) # idx of the closest centroid
+    new_clusters[closest_idx].append(label) # hold the id for whatever feature we decide to put in this cluster
+    return new_clusters
 def updateCentroids(k: KMeans):
     '''Updates the centroid by taking an average of all the points in a cluster'''
     new_centroids = []
@@ -77,7 +77,35 @@ def updateCentroids(k: KMeans):
             for i in range(dim): # for the entire feature
                 sum_vec[i] += k.features[feature_idx][i]
         clust_len = len(cluster)
-        for v in range(len(sum_vec)):
-            cur_centroid.append(sum_vec[v] / clust_len) # setting the centroid
-        new_centroids.append(cur_centroid)
+        if clust_len != 0:
+            for v in range(len(sum_vec)):
+                cur_centroid.append(sum_vec[v] / clust_len) # setting the centroid
+            new_centroids.append(cur_centroid)
     return new_centroids    
+
+def runKMeans(data_dict: dict, data, kmeansObj: KMeans, nclust: int, sc) -> None:
+    '''
+    @para: data_dict is a dictionary of all the features with the keys being the label
+    @para: kmeansObj is the object which we manipulate to do the kmeans
+    @para: nclust is the number of clusters 
+    data is a pyspark rdd ("label", [features])
+    '''
+    # read in data to my kmeans structure
+    initKmeans(data_dict, kmeansObj, nclust)
+    # initialize centroids for my data 
+    init_centroids(kmeansObj)
+    sc.broadcast(kmeansObj.centroids)
+    # keep iterating until our cluster centers stop moving or until max iter is hit
+    for idx in range(MAX_ITER):
+        assignPoints(kmeansObj)
+        old_centroids = kmeansObj.centroids
+        new_centroids = updateCentroids(kmeansObj)
+        # check if Kmeans converges
+        diff = []
+        for i in range(len(new_centroids)):
+            diff.append(euclidean_distance(old_centroids[i], new_centroids[i]))
+
+        if sum(diff) == 0: # if we converge 
+            break
+        else: # we keep finding new centroid
+            kmeansObj.centroids = new_centroids
