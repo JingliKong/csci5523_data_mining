@@ -57,26 +57,13 @@ def mahalanobis_distance(data_point: list[float], centroid: list[float], varianc
         vector.append(((x_i - c_i) / math.sqrt(sigma_i)) ** 2)
     return math.sqrt(sum(vector))
 
-def findSet(x): 
-    '''
-    x is (label, [feature])
-    either its in a discard set, compressed set or retained set 
-    '''
+def findSet(clusters, centroids, CS, ): 
+    
     return 
 
-def updateCentroids(clusters: list[list[str]], cluster_lengths: list[int], to_feature: dict, dim, sc):
-    import operator
-    new_centroids = sc.parallelize(clusters).zipWithIndex().map(lambda x: (x[1], x[0])) \
-        .flatMap(lambda x: [(x[0], label) for label in x[1]]) \
-        .map(lambda x: (x[0], to_feature[x[1]])) \
-        .flatMap(lambda x: [((x[0], i), value) for i, value in enumerate(x[1])]) \
-        .reduceByKey(operator.add) \
-        .map(lambda x: (x[0], x[1]/cluster_lengths[x[0][0]])) \
-        .map(lambda x: (x[0][0], (x[0][1], x[1]))) \
-        .groupByKey() \
-        .mapValues(list) \
-        .map(lambda x: createCentroid(x, dim)) \
-        .sortBy(lambda x: x[0]) \
-        .map(lambda x: x[1]) \
-        .collect()
-    return new_centroids
+def createDSList(clusters, label_to_feature: dict, centroids):
+
+    cluster_index = clusters[1]
+    cluster_data = clusters[0] 
+    cluster_features: list[list[float]] = [label_to_feature[label] for label in cluster_data]
+    return Discard_Set(centroids[cluster_index], cluster_features, cluster_data)

@@ -9,23 +9,20 @@ def euclidean_distance (v1: list, v2: list):
     return math.sqrt(res)
 
 def initCentroids(features: list[list[float]], num_clust: int):
-    # assigning initial centroids
-    new_centroids = []
-    new_centroids.append(features[0])
-    while (len(new_centroids) < num_clust):
-        # for each centroid calculate the distance between them and current centroids
-        min_distances = []
-        for feature in features:
-            # calculating the distance between each feature and the centroids
-            distances = [euclidean_distance(feature, centroid) for centroid in new_centroids]
+    new_centroids = [features[0]]
+
+    while len(new_centroids) < num_clust:
+        max_dist = -1
+        max_idx = -1
+        for idx, feature in enumerate(features):
+            min_dist = min(euclidean_distance(feature, centroid) for centroid in new_centroids)
             
-            # we want to find the point which is the closest to the all the existing centroids
-            min_dist = min(distances)
-            min_distances.append(min_dist)
-        # this is the point who is furthest away from our existing centroids
-        max_dist = max(min_distances) 
-        max_idx = min_distances.index(max_dist) # recall that the min_distances have the same index as our original features list 
+            if min_dist > max_dist:
+                max_dist = min_dist
+                max_idx = idx
+
         new_centroids.append(features[max_idx])
+
     return new_centroids
 def assignPoints(point: tuple[str, list[float]], centroids: list[float]):
     '''Assigns points to clusters based on how close they are to a centroid''' 
@@ -66,4 +63,66 @@ def createCentroid(centroid_data, centroid_dim):
         value = d[1]
         centroid[index] = value
     return (cluster_num, centroid)
-    
+
+def updateCentroids(clusters: list[list[str]], cluster_lengths: list[int], to_feature: dict, dim, sc):
+    import operator
+    new_centroids = sc.parallelize(clusters).zipWithIndex().map(lambda x: (x[1], x[0])) \
+        .flatMap(lambda x: [(x[0], label) for label in x[1]]) \
+        .map(lambda x: (x[0], to_feature[x[1]])) \
+        .flatMap(lambda x: [((x[0], i), value) for i, value in enumerate(x[1])]) \
+        .reduceByKey(operator.add) \
+        .map(lambda x: (x[0], x[1]/cluster_lengths[x[0][0]])) \
+        .map(lambda x: (x[0][0], (x[0][1], x[1]))) \
+        .groupByKey() \
+        .mapValues(list) \
+        .map(lambda x: createCentroid(x, dim)) \
+        .sortBy(lambda x: x[0]) \
+        .map(lambda x: x[1]) \
+        .collect()
+    return new_centroids
+
+def findOutliers(clusters: list[list[float]]):
+    inliers = []
+    outliers = []
+    outlier_threshold = 10
+    for c in clusters:
+        if len(c) <= outlier_threshold:
+            outliers.append(c)
+        else: # we are an inlier cluster 
+            inliers.append(c)
+
+    return inliers, outliers
+
+def combine_cluster_lists(list1, list2):
+    # Zip the elements of the two input lists and concatenate them
+    concatenated_list = [a + b for a, b in zip(list1, list2)]
+    # Filter out any empty elements from the concatenated list
+    filtered_list = [list(filter(None, sublist)) for sublist in concatenated_list]
+    return filtered_list
+
+def runKmeans(data_sample, data_sample_dict, features, dim, n_cluster: int, sc):
+    clusters = []
+    centroids = sc.broadcast(initCentroids(features, n_cluster)) # we need to initialize our first run of kmeans to be some multiple of the number of clusters to avoid not converging because of outliers
+    current_iter = 0
+    prev_cluster = None
+    old_lengths = None
+    while (current_iter < MAX_ITER):
+        clusters = data_sample.map(lambda x: assignPoints(x, centroids)) \
+            .reduce(lambda x, y: combine_cluster_lists(x,y))
+        cluster_lengths = [len(cluster) for cluster in clusters] # stores how many features are in each cluster used for finding the centroid later
+        # print(f"iter: {current_iter} cluster: {cluster_lengths}") # DEBUG
+        # old_centroids = centroids
+        # new_centroids = updateCentroids(clusters, features, labels, dim)
+        new_centroids = updateCentroids(clusters, cluster_lengths, data_sample_dict, dim, sc)
+        # Compare the current clusters with the previous clusters
+        if old_lengths == cluster_lengths or prev_cluster is not None and clusters == prev_clusters:
+            break
+        else:
+            prev_clusters = clusters  # Update prev_clusters with the current clusters
+            centroids = sc.broadcast(new_centroids)
+            old_lengths = cluster_lengths
+            # a = [len(c) for c in clusters] # DEBUG
+            # print(a)
+        # print(current_iter)
+        current_iter += 1  
+    return clusters, centroids.value # note that centroids was a broadcasted object
