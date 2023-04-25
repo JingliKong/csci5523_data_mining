@@ -112,7 +112,7 @@ class KMeans:
     def findClusterData(self):
         return [[self.label_to_feature[x] for x in cluster] for cluster in self.clusters]
     
-    def get_cluster_data(self):
+    def get_cluster_data(self): # TODO change this 
         return list(map(lambda x: list(map(lambda x: self.label_to_feature[x], x)), self.clusters))
 
 

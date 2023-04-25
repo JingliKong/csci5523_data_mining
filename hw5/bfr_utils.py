@@ -31,22 +31,16 @@ class Discard_Set:
         self.SUMSQ = [a + b * b for a, b in zip(self.SUMSQ, data_point)]
         self.data_indices.append(data_index)
     
-    def __repr__(self):
-        return f"centroid: {str(self.get_centroid())}, variance: {str(self.calc_variance())}"
     
+
+def create_discard_set(data_points: dict, cluster: list) -> Discard_Set:
+    point_list = [data_points[x] for x in cluster]
+    return Discard_Set(point_list, cluster)
+
 def BuildDiscardSets(data_points: dict, cluster_data: list):
-    return [Discard_Set([data_points[x] for x in cluster], cluster) for cluster in cluster_data]
-# def BuildDiscardSets(data_points: dict, cluster_data: list):
-#     discard_sets = []
-    
-#     cluster_data = [data_points[x] for x in cluster_data]
+    return [create_discard_set(data_points, cluster) for cluster in cluster_data]
 
-#     for cluster in cluster_data:
-#         data_in_cluster = [data_points[x] for x in cluster]
-#         discard_set = Discard_Set(data_in_cluster, cluster)
-#         discard_sets.append(discard_set)
 
-#     return discard_sets
 
 
 
@@ -75,7 +69,7 @@ def assignToSet(points: dict, list_of_sets: list):
     # if not DS_CS_list:
     #     return data_points
     '''Attempts to assign point to one of my sets (compressed or retained or discard)'''
-    alpha = 2 
+    alpha = 2
     assigned_data_indices = set()
     for idx, data_point in points.items():
         min_distance = float('inf')
@@ -113,8 +107,8 @@ def mergeSets(list_of_sets: list):
                 c2 = list_of_sets[j].centroid
                 v1 = list_of_sets[j].calc_variance()
                 v2 = list_of_sets[i].calc_variance()
-                distance = max(mahalanobis_distance(c1, list_of_sets[j], v1),
-                               mahalanobis_distance(c2, list_of_sets[i], v2))
+                distance = max(mahalanobis_distance(c1, c2, v1),
+                               mahalanobis_distance(c2, c1, v2))
                 if distance < min_distance:
                     min_distance = distance
                     min_i = i
@@ -125,6 +119,14 @@ def mergeSets(list_of_sets: list):
         list_of_sets.pop(min_j)
 
     return list_of_sets
+
+def merge2Sets(DS: list, CS: list):
+    for cs in CS:
+        distances = [euclidean_distance(cs.centroid, ds.centroid) for ds in DS]
+        min_idx = min(enumerate(distances), key=lambda x: x[1])[0]
+        DS[min_idx].merge(cs)
+    return DS
+
 
 def getNumPoints(_sets: list):
     return sum(x.N for x in _sets)

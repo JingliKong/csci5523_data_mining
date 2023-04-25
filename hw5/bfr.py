@@ -82,7 +82,7 @@ if __name__ == "__main__":
         CS = mergeSets(CS)
         # if we are at the last iteartion we have to all merge sets
         if (chunk_num == len(chunks_names) - 1):
-            DS = mergeSets(DS, CS)
+            DS = merge2Sets(DS, CS)
             CS = []
             RS.data_points = assignToSet(RS.data_points, DS)
 
@@ -91,16 +91,21 @@ if __name__ == "__main__":
             f.write(','.join(map(str, inter_result)))
             f.write('\n')
         print(chunk_num)
-    
-    # After finishing clustering we write results out 
-    result = {}
-    for i, one_DS in enumerate(DS):
-        for data_index in one_DS.data_indices:
-            result[data_index] = i
-    for idx in RS.data_points:
-        result[idx] = -1
 
-    with open(args.out_file1, 'w') as f:
-        json.dump(result, f)
+    def write_results_to_file(DS, RS, output_file):
+        result = {
+            data_index: i
+            for i, one_DS in enumerate(DS)
+            for data_index in one_DS.data_indices
+        }
+        result.update({idx: -1 for idx in RS.data_points})
+
+        with open(output_file, 'w') as f:
+            json.dump(result, f)
+
+    # After finishing clustering we write results out 
+    write_results_to_file(DS, RS, args.out_file1)
+    
+
     
         
