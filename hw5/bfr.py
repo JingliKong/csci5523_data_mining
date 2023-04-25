@@ -2,18 +2,13 @@ import pyspark
 import os
 import argparse 
 import operator 
+import itertools 
+import json 
 
-from kmeans_util import *
-from bfr_utils import * 
-
-NUM_CLUSTERS = 10
-
-MAX_ITER = 1000
-
-
+from kmeans import * 
+from bfr_utils import *
 
 if __name__ == "__main__":
-    
 
     sc_conf = pyspark.SparkConf() \
         .setAppName('hw3_task1') \
@@ -26,72 +21,86 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='A1T1')
     parser.add_argument('--input_path', type=str, default='./data/test1')
-    parser.add_argument('--n_cluster', type=int, default=3)
+    parser.add_argument('--n_cluster', type=int, default=10)
     parser.add_argument('--out_file1', type=str, default='./outputs/cluster_results.txt') # the output file of cluster results 
-    parser.add_argument('--out_file2', type=str, default='./outputs/intermediate_results.txt') # the output file of cluster results 
+    parser.add_argument('--out_file2', type=str, default='./outputs/intermediate_results.txt') # the output file of cluster results
     args = parser.parse_args()
 
     chunks_names = sorted(os.listdir(args.input_path)) # ['data1.txt', 'data3.txt', 'data0.txt', 'data2.txt', 'data4.txt']
-    # test_data = './data/myTestData.txt' #DEBUG
-    # test_data = './data/test1/data0.txt' # DEBUG
-    # first reading data from the for now lets just focus on a single chunk
-    isFirstChunk = True
-    DS = [] # holds information on the discard sets
-    CS = [] # compressed set 
-    RS = [] # retained sets
-    for chunk in chunks_names:
+
+    DS = None
+    CS = None
+    RS = None
+    with open(args.out_file2, 'w') as f:
+        f.write("round_id,nof_cluster_discard,nof_point_discard,nof_cluster_compression,nof_point_compression,nof_point_retained\n")
+    for chunk_num, chunk in enumerate(chunks_names):
         chunk_path: str = f"{args.input_path}/{chunk}" 
-        # 7 A.
-        rdd = sc.textFile(chunk_path) 
-        data = rdd.map(lambda x: x.split(',')) \
-            .map(lambda x: (x[0], [float(num) for num in x[1:]])) # [('0', [-51.71899392687148, -16.014919500749066, -32.74523700769919, -18.521163057290334, 24.521957915324595]
-        
-        if isFirstChunk:
-            #Below line is used for DEBUG
-            # data_sample = sc.textFile("./data/myTestData.txt").map(lambda x: x.split(',')).map(lambda x: (x[0], [float(num) for num in x[1:]])) 
-            data_sample = data.sample(False, 1/10, seed=103) # we want to take 1/10 of the data to create cluster centers with
+        debug_path = "./data/myTestData.txt"
+        data = sc.textFile(chunk_path) \
+            .map(lambda x: x.split(',')) \
+            .map(lambda x: (x[0], [float(num) for num in x[1:]]))
+        all_data_dict = data.collectAsMap()
+        if chunk_num == 0: # we are in our first iteration and need to initialize Discard sets
+            data_sample = data.sample(False, 1.4/100, seed=103)
             data_sample_dict = data_sample.collectAsMap()
-
-            features = list(data_sample_dict.values())
-            # labels = list(data_sample_dict.keys())
-            dim = len(features[0]) # dimension of each feature/centroid
-
-            clusters, centroids = runKmeans(data_sample, data_sample_dict, features, dim, 3 * args.n_cluster, sc)
-
-            # after we run kmeans the first time we have a number of outliers and inliers the inliers get processed again to get our Discard sets
-            inliers, outliers = findOutliers(clusters)
-            # at this point we know inliers should be used to create Discard sets
-            inlier_labels = sc.parallelize(inliers).flatMap(lambda x: x).collect()
-
-            create_DS_data = data_sample.filter(lambda x: x[0] in inlier_labels) # creating initial DS sets with inliers from the sameple data
-            create_DS_data_dict = create_DS_data.collectAsMap()
-            features = list(create_DS_data_dict.values())
-            clusters, centroids = runKmeans(create_DS_data, create_DS_data_dict, features, dim, args.n_cluster * 5, sc)
-            # creating our initial discard sets
-            # 7 E: The initialization of DS has finished, so far, you have K clusters in DS.
-            DS = sc.parallelize(clusters).zipWithIndex().map(lambda x: createDSList(x, create_DS_data_dict, centroids)).collect()
-            # run kmeans again on the create_DS_data 
-            # for i in range(len(clusters)):
-            #     cluster_features: list[list[float]] = [data_sample[label] for label in clusters[i]]
-            #     DS.append(Discard_Set(centroids[i], cluster_features, clusters[i])) # holds the labels that are in each cluster
-            # 7 E: Running K-means on the rest of chunk 1 to create Compressed Sets and Retained sets for clusters who have only 1 point in them
-            # filtering out data we already processed and put into Discard sets
-            processed_labels = list(create_DS_data_dict.keys())
-
-            data = data.filter(lambda x: x[0] not in processed_labels)
-            data_dict = data.collectAsMap()
-            features = list(data_dict.values())
-            clusters, centroids = runKmeans(data, data_dict, features, dim, args.n_cluster * 5, sc)
-
-            # cluster_lengths = [len(cluster) for cluster in clusters] #DEBUG
-            # print(cluster_lengths) #DEBUG
-            temp = sc.parallelize(clusters).zipWithIndex()
-            current_CS = temp.filter(lambda x: len(x[0]) > 1)
-            current_RS = temp.filter(lambda x: len(x[0]) == 1)
             
-            # clustering the rest of the data 
+            sample_kmeans = KMeans(data_sample_dict, args.n_cluster * 3)
+            # debug_kmeans = KMeans(data.collectAsMap(), 3)
+            inliers, outliers = sample_kmeans.findDataOutliers(threshold=10)
+            inliers_rdd_dict = sc.parallelize(inliers).map(lambda x: (x, data_sample_dict[x])).collectAsMap()
+            process_inliers = KMeans(
+                inliers_rdd_dict,
+                args.n_cluster
+            )
+            # building initial discard sets for data that are not outliers
+            DS = BuildDiscardSets(all_data_dict, process_inliers.get_cluster_data())
+            if (len(outliers) != 0): # if there are outliers to process
+                outliers_rdd_dict = sc.parallelize(outliers).map(lambda x: (x, data_sample_dict[x])).collectAsMap() 
+                kmeans_outliers = KMeans(outliers_rdd_dict, args.n_cluster * 3)
+                local_CS, local_RS = kmeans_outliers.findOutliers(threshold=1) # clusters with 1 element are put inside the RS
+                CS = BuildDiscardSets(all_data_dict, local_CS)
+                RS = Retained_Set(all_data_dict, [cluster[0] for cluster in local_RS if cluster])
 
-            isFirstChunk = False
-        print()
+            else: # no outliers so we have no conserved or retained sets
+                CS = [] 
+                RS = Retained_Set(all_data_dict, [])
 
-    sc.stop()
+        # now filtering out point we already processed in iteration 0
+        data = {key: value for key, value in all_data_dict.items() if key not in data_sample_dict}
+        # everyone needs to compare all their data and decide which set it goes in 
+        data = assignToSet(data, DS) # checking if we can assign a point to a discard set
+        data = assignToSet(data, CS) # checking the conserved sets
+        # remaining points are assigned to the retained set
+        RS.add_points(data)
+        # now we run kmeans again on the elements in the retained sets to see if those cluster
+        RS_Clusters = KMeans(RS.data_points, args.n_cluster * 3)
+        new_cs, new_rs = RS_Clusters.findOutliers(threshold=1)
+        CS += BuildDiscardSets(RS.data_points, new_cs)
+        RS = Retained_Set(RS.data_points, [cluster[0] for cluster in new_rs if cluster]) # gets rid of extra empty lists to
+ 
+        # now we try to merge as many conserved sets as possible
+        CS = mergeSets(CS)
+        # if we are at the last iteartion we have to all merge sets
+        if (chunk_num == len(chunks_names) - 1):
+            DS = mergeSets(DS, CS)
+            CS = []
+            RS.data_points = assignToSet(RS.data_points, DS)
+
+        inter_result = [chunk_num + 1, len(DS), getNumPoints(DS), len(CS), getNumPoints(CS), len(RS.data_points)]
+        with open(args.out_file2, 'a') as f:
+            f.write(','.join(map(str, inter_result)))
+            f.write('\n')
+        print(chunk_num)
+    
+    # After finishing clustering we write results out 
+    result = {}
+    for i, one_DS in enumerate(DS):
+        for data_index in one_DS.data_indices:
+            result[data_index] = i
+    for idx in RS.data_points:
+        result[idx] = -1
+
+    with open(args.out_file1, 'w') as f:
+        json.dump(result, f)
+    
+        
